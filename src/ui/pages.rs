@@ -286,8 +286,12 @@ impl App {
                 if self.row(ui, "Tự nghỉ khi không thấy desktop", "Cửa sổ phóng to, game, phim toàn màn hình", |ui| toggle(ui, &mut smart).changed()) {
                     s.pause_on_covered = smart; s.pause_on_fullscreen = smart; changed = true;
                 }
+                changed |= self.row(ui, "Nghỉ sớm khi cửa sổ chiếm ≥ 85% màn hình", "Máy mát hơn khi làm việc; phần hình nền còn lộ ra sẽ đứng yên", |ui| toggle(ui, &mut s.pause_cover_85).changed());
                 changed |= self.row(ui, "Dừng khi dùng pin", "", |ui| toggle(ui, &mut s.pause_on_battery).changed());
                 login = self.row(ui, "Khởi động cùng Windows", "", |ui| toggle(ui, &mut s.launch_at_login).changed());
+                if self.row(ui, "Hiện trong tìm kiếm Windows", "Gõ \"Vire\" ở ô tìm kiếm để mở", |ui| toggle(ui, &mut s.start_menu).changed()) {
+                    autostart::set_start_shortcut(s.start_menu); changed = true;
+                }
             });
             ui.add_space(14.0);
             if pill_button(ui, Some(Icon::Folder), "Mở thư mục Vire", false).on_hover_text("Hình nền, nhạc và dữ liệu của bạn").clicked() { open_url(&crate::model::lib_root().to_string_lossy()); }

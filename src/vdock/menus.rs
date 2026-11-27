@@ -166,20 +166,25 @@ pub(super) unsafe fn item_context_menu(h: HWND, it: &Item, a: Anchor) {
 /// (never into your own app), then slide the flyout next to the dock's "^" button.
 pub(super) unsafe fn open_tray_flyout(a: Anchor) {
     let prev = GetForegroundWindow().0 as isize; // HWND isn't Send; carry it as a number
-    dbg("flyout: click, sending Win+B");
-    send_keys(&[VK_LWIN, VIRTUAL_KEY(b'B' as u16)]);
+    // Preferred: press the real taskbar's "show hidden icons" button (no keystrokes — nothing can
+    // leak into a remote-desktop window in front). Fallback: Win+B, then Enter once focus is there.
+    let pressed = tbmirror::request(tbmirror::TbAct::HiddenIcons);
+    dbg(&format!("flyout: click, pressed the taskbar button = {pressed}"));
+    if !pressed { send_keys(&[VK_LWIN, VIRTUAL_KEY(b'B' as u16)]); }
     std::thread::spawn(move || unsafe {
         let prev = HWND(prev as *mut _);
         let cls = |h: HWND| { let mut b = [0u16; 64]; let n = GetClassNameW(h, &mut b) as usize; String::from_utf16_lossy(&b[..n]) };
-        let mut focused = false;
-        for _ in 0..30 { // up to ~750 ms
-            std::thread::sleep(Duration::from_millis(25));
-            if cls(GetForegroundWindow()) == "Shell_TrayWnd" { focused = true; break; }
+        if !pressed {
+            let mut focused = false;
+            for _ in 0..30 { // up to ~750 ms
+                std::thread::sleep(Duration::from_millis(25));
+                if cls(GetForegroundWindow()) == "Shell_TrayWnd" { focused = true; break; }
+            }
+            dbg(&format!("flyout: tray focus={focused} (foreground class now '{}')", cls(GetForegroundWindow())));
+            if !focused { return; }
+            std::thread::sleep(Duration::from_millis(120));
+            send_keys(&[VK_RETURN]);
         }
-        dbg(&format!("flyout: tray focus={focused} (foreground class now '{}')", cls(GetForegroundWindow())));
-        if !focused { return; }
-        std::thread::sleep(Duration::from_millis(120));
-        send_keys(&[VK_RETURN]);
         // Wait for the flyout, then place it.
         let find = || FindWindowW(w!("TopLevelWindowForOverflowXamlIsland"), PCWSTR::null()).ok().filter(|f| IsWindowVisible(*f).as_bool());
         let mut fly = None;

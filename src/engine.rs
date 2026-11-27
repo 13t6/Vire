@@ -34,6 +34,8 @@ pub struct Plan {
     pub pause_on_battery: bool,
     pub pause_on_fullscreen: bool,
     pub pause_on_covered: bool,
+    /// Also pause when one window fills ≥ 85% of a monitor.
+    pub pause_cover_85: bool,
     /// Live wallpaper switched on (off = nothing is created; the Windows wallpaper shows).
     pub enabled: bool,
     /// The songs of the wallpaper on the primary monitor. When they change (a different
@@ -66,6 +68,7 @@ impl Plan {
             pause_on_battery: s.pause_on_battery,
             pause_on_fullscreen: s.pause_on_fullscreen,
             pause_on_covered: s.pause_on_covered,
+            pause_cover_85: s.pause_cover_85,
             enabled: s.live_wallpaper,
         }
     }
@@ -558,7 +561,7 @@ unsafe fn engine_thread(rx: Receiver<Cmd>, status: Arc<Status>) {
             ctx.keep_placed();
             if let Some(plan) = ctx.plan.clone() {
                 let auto_now = (plan.pause_on_battery && on_battery()) || (plan.pause_on_fullscreen && desktop::fullscreen_app_active(own_pid));
-                let covered_now = if plan.pause_on_covered && !(plan.user_paused || auto_now) { desktop::covered_monitors(own_pid, &last_mons) } else { Vec::new() };
+                let covered_now = if plan.pause_on_covered && !(plan.user_paused || auto_now) { desktop::covered_monitors_by(own_pid, &last_mons, if plan.pause_cover_85 { 0.85 } else { 1.0 }) } else { Vec::new() };
                 // Pause / resume only after the situation has been the same for 1.2 s: Alt+Tab (the
                 // task switcher counts as "fullscreen") and windows flicking between maximized
                 // states used to pause and restart the video every time.

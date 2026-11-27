@@ -246,7 +246,10 @@ unsafe fn reschedule(h: &mut Host) {
 /// Just above the desktop, under every normal window; the blur window right below its widget.
 unsafe fn z_place(w: &Win) {
     crate::widget::place_above_desktop_n(w.hwnd, 40);
-    if !w.body.is_invalid() { let _ = SetWindowPos(w.body, w.hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
+    // Only when the blur window is not already right behind its widget (a no-op move still makes DWM recompose).
+    if !w.body.is_invalid() && GetWindow(w.hwnd, GW_HWNDNEXT).ok() != Some(w.body) {
+        let _ = SetWindowPos(w.body, w.hwnd, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
 }
 
 unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
@@ -278,7 +281,7 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM
                         if !IsWindowVisible(w.hwnd).as_bool() { w.force = true; w.next = Instant::now(); redraw = true; }
                     }
                     if redraw { on_timer(h, false); }
-                    for w in &h.wins { z_place(w); }
+                    for w in &h.wins { if IsWindowVisible(w.hwnd).as_bool() { z_place(w); } }
                 }).unwrap_or(()),
                 _ => {}
             }

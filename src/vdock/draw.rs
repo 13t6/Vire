@@ -46,6 +46,7 @@ impl Dock {
             Material::Acrylic => (rgba(16, 18, 26, 0.18), 0.40, 0.14, 0.06),
             Material::Mica => (rgba(22, 24, 34, 0.30), 0.26, 0.10, 0.03),
         };
+        let tint = if self.light { rgba(255, 255, 255, 0.42) } else { tint };
         fill_rrect(c, r, rad, |_| tint);
         if !self.vertical() {
             fill_rrect(c, r, rad, |fy| rgba(255, 255, 255, if fy < 0.45 { sheen * (1.0 - fy / 0.45) } else { 0.0 }));
@@ -65,6 +66,10 @@ impl Dock {
         let (_, _, w, h) = self.content_rect(self.reveal);
         let mut c = Canvas::new(w, h);
         let g_s = self.geo.s;
+        // On a light backdrop everything that was white is drawn dark (and the glass is lighter).
+        let light = self.light;
+        let ink = |a: f32| if light { rgba(18, 20, 30, a) } else { rgba(255, 255, 255, a) };
+        let ink2 = |a: f32| if light { rgba(36, 40, 56, a) } else { rgba(225, 230, 245, a) };
         let b = self.body_local();
         let reflect = self.cfg.style == 1;
         let refl_total = self.geo.refl_gap + self.geo.refl_len;
@@ -118,7 +123,7 @@ impl Dock {
                             Edge::Left => R { x: b.x + 1.5 * g_s, y: along - len / 2.0, w: t, h: len },
                             Edge::Right => R { x: b.x + b.w - 4.5 * g_s, y: along - len / 2.0, w: t, h: len },
                         } };
-                        fill_rrect(&mut c, mr, t / 2.0, |_| rgba(255, 255, 255, a));
+                        fill_rrect(&mut c, mr, t / 2.0, |_| ink(a));
                     }
                 }
                 Kind::Start => {
@@ -147,7 +152,7 @@ impl Dock {
                         for s in 0..=steps {
                             let t = s as f32 / steps as f32;
                             let (x, y) = (cx + seg.0 .0 + (seg.1 .0 - seg.0 .0) * t, cy + seg.0 .1 + (seg.1 .1 - seg.0 .1) * t);
-                            fill_rrect(&mut c, R { x: x - th / 2.0, y: y - th / 2.0, w: th, h: th }, th / 2.0, |_| rgba(240, 242, 250, 0.9));
+                            fill_rrect(&mut c, R { x: x - th / 2.0, y: y - th / 2.0, w: th, h: th }, th / 2.0, |_| ink(0.9));
                         }
                     }
                 }
@@ -157,26 +162,26 @@ impl Dock {
                     let wl = size * 0.46;
                     for (k, off) in [(0.3f32, -0.12f32), (0.7, 0.12)] {
                         let yy = cy + off * size;
-                        fill_rrect(&mut c, R { x: cx - wl / 2.0, y: yy - 1.2 * g_s, w: wl, h: 2.4 * g_s }, 1.2 * g_s, |_| rgba(235, 238, 250, 0.85));
+                        fill_rrect(&mut c, R { x: cx - wl / 2.0, y: yy - 1.2 * g_s, w: wl, h: 2.4 * g_s }, 1.2 * g_s, |_| ink(0.85));
                         let kx = cx - wl / 2.0 + wl * k;
-                        fill_rrect(&mut c, R { x: kx - 4.0 * g_s, y: yy - 4.0 * g_s, w: 8.0 * g_s, h: 8.0 * g_s }, 4.0 * g_s, |_| rgba(255, 255, 255, 1.0));
+                        fill_rrect(&mut c, R { x: kx - 4.0 * g_s, y: yy - 4.0 * g_s, w: 8.0 * g_s, h: 8.0 * g_s }, 4.0 * g_s, |_| ink(1.0));
                     }
                 }
                 Kind::Sep => {
                     let l = if reflect { self.geo.icon * 0.75 } else { self.geo.thick * 0.5 };
                     let sr = if self.vertical() { R { x: zone_c - l / 2.0, y: along - 0.5, w: l, h: 1.0 } } else { R { x: along - 0.5, y: zone_c - l / 2.0, w: 1.0, h: l } };
-                    fill_rrect(&mut c, sr, 0.5, |_| rgba(255, 255, 255, 0.28));
+                    fill_rrect(&mut c, sr, 0.5, |_| ink(if light { 0.40 } else { 0.28 }));
                 }
                 Kind::Clock => {
                     let tm = text_mask(&self.clock.0, (15.0 * g_s) as i32, 600);
                     if self.vertical() {
-                        draw_mask(&mut c, &tm, zone_c - tm.w as f32 / 2.0, along - tm.h as f32 / 2.0, rgba(255, 255, 255, 1.0));
+                        draw_mask(&mut c, &tm, zone_c - tm.w as f32 / 2.0, along - tm.h as f32 / 2.0, ink(1.0));
                     } else {
                         let dm = text_mask(&self.clock.1, (11.5 * g_s) as i32, 400);
                         let total = tm.h as f32 + dm.h as f32 - 2.0 * g_s;
                         let y0 = zone_c - total / 2.0;
-                        draw_mask(&mut c, &tm, along - tm.w as f32 / 2.0, y0, rgba(255, 255, 255, 1.0));
-                        draw_mask(&mut c, &dm, along - dm.w as f32 / 2.0, y0 + tm.h as f32 - 2.0 * g_s, rgba(225, 230, 245, 0.75));
+                        draw_mask(&mut c, &tm, along - tm.w as f32 / 2.0, y0, ink(1.0));
+                        draw_mask(&mut c, &dm, along - dm.w as f32 / 2.0, y0 + tm.h as f32 - 2.0 * g_s, ink2(0.8));
                     }
                 }
             }

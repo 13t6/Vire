@@ -6,9 +6,11 @@ impl Dock {
     pub(super) unsafe fn click(&mut self, i: usize, middle: bool) {
         let it = self.items[i].clone();
         match it.kind {
-            Kind::Start => send_keys(&[VK_LWIN]),
-            Kind::Clock => send_keys(&[VK_LWIN, VIRTUAL_KEY(b'N' as u16)]),
-            Kind::Control => send_keys(&[VK_LWIN, VIRTUAL_KEY(b'A' as u16)]),
+            // The real taskbar's own buttons are pressed (see tbmirror); keystrokes are only the
+            // fallback, and are never sent while a remote-desktop window is in front.
+            Kind::Start => if !tbmirror::request(tbmirror::TbAct::Start) { send_keys(&[VK_LWIN]) },
+            Kind::Clock => if !tbmirror::request(tbmirror::TbAct::Clock) { send_keys(&[VK_LWIN, VIRTUAL_KEY(b'N' as u16)]) },
+            Kind::Control => if !tbmirror::request(tbmirror::TbAct::QuickSettings) { send_keys(&[VK_LWIN, VIRTUAL_KEY(b'A' as u16)]) },
             Kind::Sep | Kind::Tray => {}
             Kind::App => {
                 dbg(&format!("click app '{}' wins={:?} middle={}", it.name, it.wins, middle));

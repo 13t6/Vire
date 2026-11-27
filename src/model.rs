@@ -48,7 +48,11 @@ pub struct Settings {
     pub pause_on_fullscreen: bool,
     /// Pause a monitor's video while a maximized window hides its desktop.
     pub pause_on_covered: bool,
+    /// Also pause the video when a single window fills at least 85% of a monitor.
+    pub pause_cover_85: bool,
     pub launch_at_login: bool,
+    /// Vire shows up in the Windows search box (Start Menu shortcut).
+    pub start_menu: bool,
     pub user_paused: bool,
     pub selected_id: Option<String>,
     /// true = same wallpaper on every monitor.
@@ -109,7 +113,9 @@ impl Default for Settings {
             pause_on_battery: false,
             pause_on_fullscreen: true,
             pause_on_covered: true,
+            pause_cover_85: false,
             launch_at_login: false,
+            start_menu: true,
             user_paused: false,
             selected_id: None,
             sync_all: true,

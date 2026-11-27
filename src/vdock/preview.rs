@@ -21,18 +21,21 @@ struct Pv {
     wins: Vec<isize>,
     cells: Vec<Cell>,
     hot: Option<usize>,
+    /// The pointer is on the close button of this cell.
+    hot_x: Option<usize>,
     hide_at: Option<Instant>,
     dwell: Option<(String, Instant)>,
     /// Item just clicked: no preview for it until the cursor moves to another icon.
     suppress: Option<String>,
     font: HFONT,
+    icon_font: HFONT,
     s: f32,
 }
 
 thread_local! { static PV: RefCell<Option<Pv>> = const { RefCell::new(None) }; }
 
-const BG: (u8, u8, u8) = (30, 31, 36);
-const HOT: (u8, u8, u8) = (52, 54, 62);
+const BG: (u8, u8, u8) = (32, 32, 32);
+const HOT: (u8, u8, u8) = (55, 55, 55);
 fn rgb(c: (u8, u8, u8)) -> COLORREF { COLORREF(c.0 as u32 | (c.1 as u32) << 8 | (c.2 as u32) << 16) }
 
 unsafe fn ensure() {
@@ -50,7 +53,10 @@ unsafe fn ensure() {
         let s = GetDpiForSystem() as f32 / 96.0;
         let font = CreateFontW(-(13.0 * s) as i32, 0, 0, 0, 600, 0, 0, 0, DEFAULT_CHARSET.0 as u32, OUT_TT_PRECIS.0 as u32,
             CLIP_DEFAULT_PRECIS.0 as u32, CLEARTYPE_QUALITY.0 as u32, (DEFAULT_PITCH.0 | FF_SWISS.0) as u32, &HSTRING::from("Segoe UI"));
-        *p.borrow_mut() = Some(Pv { hwnd, key: String::new(), wins: vec![], cells: vec![], hot: None, hide_at: None, dwell: None, suppress: None, font, s });
+        // Windows' own icon font (Segoe Fluent Icons on 11; Segoe MDL2 Assets is the same glyph set).
+        let icon_font = CreateFontW(-(11.0 * s) as i32, 0, 0, 0, 400, 0, 0, 0, DEFAULT_CHARSET.0 as u32, OUT_TT_PRECIS.0 as u32,
+            CLIP_DEFAULT_PRECIS.0 as u32, CLEARTYPE_QUALITY.0 as u32, (DEFAULT_PITCH.0 | FF_SWISS.0) as u32, &HSTRING::from("Segoe Fluent Icons"));
+        *p.borrow_mut() = Some(Pv { hwnd, key: String::new(), wins: vec![], cells: vec![], hot: None, hot_x: None, hide_at: None, dwell: None, suppress: None, font, icon_font, s });
     });
 }
 
@@ -60,6 +66,7 @@ unsafe fn hide(pv: &mut Pv) {
     pv.key.clear();
     pv.wins.clear();
     pv.hot = None;
+    pv.hot_x = None;
     pv.hide_at = None;
 }
 
@@ -169,6 +176,13 @@ pub(super) fn dismiss() {
     });
 }
 
+/// The round "x" button in the top-right corner of a preview.
+fn close_rect(c: &Cell, s: f32) -> RECT {
+    let (d, m) = ((26.0 * s) as i32, (2.0 * s) as i32);
+    RECT { left: c.rect.right - m - d, top: c.rect.top + m, right: c.rect.right - m, bottom: c.rect.top + m + d }
+}
+fn in_rect(r: &RECT, x: i32, y: i32) -> bool { x >= r.left && x < r.right && y >= r.top && y < r.bottom }
+
 fn cell_at(pv: &Pv, x: i32, y: i32) -> Option<usize> {
     pv.cells.iter().position(|c| x >= c.rect.left && x < c.rect.right && y >= c.rect.top && y < c.rect.bottom)
 }
@@ -181,18 +195,23 @@ unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LRES
             PV.with(|p| if let Ok(mut g) = p.try_borrow_mut() {
                 if let Some(pv) = g.as_mut() {
                     let hot = cell_at(pv, mx, my);
-                    if hot != pv.hot { pv.hot = hot; let _ = InvalidateRect(h, None, true); }
+                    let hot_x = hot.filter(|&i| in_rect(&close_rect(&pv.cells[i], pv.s), mx, my));
+                    if hot != pv.hot || hot_x != pv.hot_x { pv.hot = hot; pv.hot_x = hot_x; let _ = InvalidateRect(h, None, true); }
                     pv.hide_at = None;
                 }
             });
             LRESULT(0)
         }
         WM_LBUTTONUP | WM_MBUTTONUP => {
-            let target = PV.with(|p| p.try_borrow().ok().and_then(|g| g.as_ref().and_then(|pv| cell_at(pv, mx, my).map(|i| pv.cells[i].src))));
-            if let Some(src) = target {
+            let target = PV.with(|p| p.try_borrow().ok().and_then(|g| g.as_ref().and_then(|pv| cell_at(pv, mx, my).map(|i| (pv.cells[i].src, in_rect(&close_rect(&pv.cells[i], pv.s), mx, my))))));
+            if let Some((src, on_x)) = target {
+                // The round "x" (or a middle click) closes just that window; the preview stays open
+                // for the others and refreshes by itself.
+                if on_x && m == WM_LBUTTONUP { let _ = PostMessageW(src, WM_CLOSE, WPARAM(0), LPARAM(0)); return LRESULT(0); }
+                if m == WM_MBUTTONUP { let _ = PostMessageW(src, WM_CLOSE, WPARAM(0), LPARAM(0)); return LRESULT(0); }
                 dismiss();
-                if m == WM_MBUTTONUP { let _ = PostMessageW(src, WM_CLOSE, WPARAM(0), LPARAM(0)); }
-                else { if IsIconic(src).as_bool() { let _ = ShowWindow(src, SW_RESTORE); } activate(src); }
+                if IsIconic(src).as_bool() { let _ = ShowWindow(src, SW_RESTORE); }
+                activate(src);
             }
             LRESULT(0)
         }
@@ -214,9 +233,44 @@ unsafe extern "system" fn proc_(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> LRES
                             let _ = DeleteObject(b);
                         }
                         SetTextColor(dc, COLORREF(0x00F5F5F5));
-                        let mut tr = RECT { left: c.rect.left + r8, top: c.rect.top, right: c.rect.right - r8, bottom: c.rect.top + (30.0 * pv.s) as i32 };
+                        // The window's own small icon, then its title (as in the Windows 11 flyout).
+                        let isz = (16.0 * pv.s) as i32;
+                        let mut ic = HICON(std::ptr::null_mut());
+                        let mut res = 0usize;
+                        let _ = SendMessageTimeoutW(c.src, WM_GETICON, WPARAM(2 /*ICON_SMALL2*/), LPARAM(0), SMTO_ABORTIFHUNG, 80, Some(&mut res));
+                        if res == 0 { let _ = SendMessageTimeoutW(c.src, WM_GETICON, WPARAM(0), LPARAM(0), SMTO_ABORTIFHUNG, 80, Some(&mut res)); }
+                        if res != 0 { ic = HICON(res as *mut _); } else {
+                            let v = GetClassLongPtrW(c.src, GCLP_HICONSM); if v != 0 { ic = HICON(v as *mut _); }
+                        }
+                        let tx = if !ic.is_invalid() {
+                            let _ = DrawIconEx(dc, c.rect.left + r8, c.rect.top + ((30.0 * pv.s) as i32 - isz) / 2, ic, isz, isz, 0, None, DI_NORMAL);
+                            c.rect.left + r8 + isz + (8.0 * pv.s) as i32
+                        } else { c.rect.left + r8 };
+                        let mut tr = RECT { left: tx, top: c.rect.top, right: c.rect.right - r8 - (30.0 * pv.s) as i32, bottom: c.rect.top + (30.0 * pv.s) as i32 };
                         let mut t: Vec<u16> = c.title.encode_utf16().collect();
                         if !t.is_empty() { DrawTextW(dc, &mut t, &mut tr, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX); }
+                        // Close button for this window: a faint circle, red under the pointer.
+                        // Close button: Windows' own glyph (Segoe Fluent Icons "ChromeClose"), a rounded
+                        // square that turns Windows red under the pointer.
+                        if pv.hot == Some(i) {
+                            let cr = close_rect(c, pv.s);
+                            let on_x = pv.hot_x == Some(i);
+                            if on_x {
+                                let b = CreateSolidBrush(rgb((196, 43, 28)));
+                                let ob = SelectObject(dc, b);
+                                let op = SelectObject(dc, GetStockObject(NULL_PEN));
+                                let _ = RoundRect(dc, cr.left, cr.top, cr.right, cr.bottom, (8.0 * pv.s) as i32, (8.0 * pv.s) as i32);
+                                SelectObject(dc, op); SelectObject(dc, ob);
+                                let _ = DeleteObject(b);
+                            }
+                            let of = SelectObject(dc, pv.icon_font);
+                            SetTextColor(dc, COLORREF(0x00FFFFFF));
+                            let mut xr = cr;
+                            let mut xt: Vec<u16> = "\u{E711}".encode_utf16().collect();
+                            DrawTextW(dc, &mut xt, &mut xr, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+                            SelectObject(dc, of);
+                            SetTextColor(dc, COLORREF(0x00F5F5F5));
+                        }
                         if c.minimized || c.thumb == 0 {
                             SetTextColor(dc, COLORREF(0x00A0A0A0));
                             let mut mr = RECT { left: c.rect.left, top: tr.bottom, right: c.rect.right, bottom: c.rect.bottom };

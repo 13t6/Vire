@@ -46,10 +46,9 @@ pub(super) unsafe fn show_taskbars(show: bool) {
             if !visible { let _ = SetWindowPos(h, None, 0, 0, 0, 0, flags | SWP_SHOWWINDOW); continue; }
             if !clipped {
                 dbg("taskbar visible -> clipping it away");
-                let mut rc = RECT::default();
-                let _ = GetWindowRect(h, &mut rc);
-                let hh = (rc.bottom - rc.top).max(2);
-                SetWindowRgn(h, CreateRectRgn(0, hh - 1, 1, hh), true);
+                // The top-left pixel: with auto-hide the taskbar parks only its top 2 px on screen,
+                // and a window with nothing on screen exposes no accessible buttons.
+                SetWindowRgn(h, CreateRectRgn(0, 0, 1, 1), true);
             }
         }
     }
@@ -62,7 +61,18 @@ pub(super) unsafe fn primary_monitor() -> RECT {
     mi.rcMonitor
 }
 
+/// A remote-desktop window (UltraViewer, AnyDesk, TeamViewer, RDP…) is in front: a key press now
+/// would be forwarded to the other computer.
+pub(super) unsafe fn foreground_is_remote() -> bool {
+    let Some(exe) = exe_path_of(GetForegroundWindow()) else { return false };
+    let low = exe.to_lowercase();
+    ["ultraviewer", "teamviewer", "anydesk", "mstsc", "rustdesk", "parsec", "vncviewer", "tvnviewer", "splashtop", "radmin", "supremo", "ammyy", "dwservice", "remoting_host", "crd"]
+        .iter().any(|k| low.contains(k))
+}
+
 pub(super) unsafe fn send_keys(keys: &[VIRTUAL_KEY]) {
+    // Synthetic keys go to the foreground window: never into a remote session.
+    if foreground_is_remote() { dbg("send_keys: a remote-desktop window is in front -> not sending"); return; }
     let mut inputs = Vec::new();
     let mk = |vk: VIRTUAL_KEY, up: bool| INPUT {
         r#type: INPUT_KEYBOARD,

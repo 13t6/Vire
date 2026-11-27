@@ -256,7 +256,8 @@ impl Dock {
             items.push(Item { kind: Kind::Clock, key: "clock".into(), name: "Lịch & thông báo".into(), launch: None, pinned: true, wins: vec![], active: false, exe: String::new() });
         }
         let clock = now_clock();
-        let changed = items != self.items || clock != self.clock;
+        let light_flipped = self.update_backdrop();
+        let changed = items != self.items || clock != self.clock || light_flipped;
         if changed {
             dbg(&format!("items: {}", items.iter().map(|i| format!("[{:?} '{}' key={} pinned={} wins={}]", i.kind as u8, i.name, i.key, i.pinned, i.wins.len())).collect::<Vec<_>>().join(" ")));
             let shape_changed = items.len() != self.items.len() || items.iter().zip(self.items.iter()).any(|(a, b)| a.kind != b.kind);

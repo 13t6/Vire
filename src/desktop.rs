@@ -145,9 +145,13 @@ pub fn refresh_static_wallpaper() {
 
 /// Devices (\\.\DISPLAYn) whose desktop is completely hidden by a maximized / fullscreen window.
 /// Skips minimized, invisible, cloaked (suspended UWP / other virtual desktop) and tool windows.
-pub fn covered_monitors(own_pid: u32, mons: &[Monitor]) -> Vec<String> {
+pub fn covered_monitors(own_pid: u32, mons: &[Monitor]) -> Vec<String> { covered_monitors_by(own_pid, mons, 1.0) }
+
+/// Like `covered_monitors`, but a single window that fills at least `frac` of a monitor (0.85 = 85%)
+/// also counts as covering it: the wallpaper is then hardly visible any more.
+pub fn covered_monitors_by(own_pid: u32, mons: &[Monitor], frac: f32) -> Vec<String> {
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
-    struct Ctx<'a> { pid: u32, mons: &'a [Monitor], out: Vec<String> }
+    struct Ctx<'a> { pid: u32, mons: &'a [Monitor], out: Vec<String>, frac: f32 }
     unsafe extern "system" fn cb(h: HWND, data: LPARAM) -> BOOL {
         let ctx = &mut *(data.0 as *mut Ctx);
         if !IsWindowVisible(h).as_bool() || IsIconic(h).as_bool() { return BOOL(1); }
@@ -169,11 +173,16 @@ pub fn covered_monitors(own_pid: u32, mons: &[Monitor]) -> Vec<String> {
             // A maximized window fills the work area of the monitor its centre is on.
             let (cx, cy) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
             let on_it = cx >= m.rect.left && cx < m.rect.right && cy >= m.rect.top && cy < m.rect.bottom;
-            if (covers || (zoomed && on_it)) && !ctx.out.contains(&m.device) { ctx.out.push(m.device.clone()); }
+            let big = ctx.frac < 1.0 && {
+                let (iw, ih) = ((r.right.min(m.rect.right) - r.left.max(m.rect.left)).max(0) as f32, (r.bottom.min(m.rect.bottom) - r.top.max(m.rect.top)).max(0) as f32);
+                let area = ((m.rect.right - m.rect.left) as f32 * (m.rect.bottom - m.rect.top) as f32).max(1.0);
+                iw * ih / area >= ctx.frac
+            };
+            if (covers || big || (zoomed && on_it)) && !ctx.out.contains(&m.device) { ctx.out.push(m.device.clone()); }
         }
         BOOL(1)
     }
-    let mut ctx = Ctx { pid: own_pid, mons, out: Vec::new() };
+    let mut ctx = Ctx { pid: own_pid, mons, out: Vec::new(), frac };
     unsafe { let _ = EnumWindows(Some(cb), LPARAM(&mut ctx as *mut _ as isize)); }
     ctx.out
 }

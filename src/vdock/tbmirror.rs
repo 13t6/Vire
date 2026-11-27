@@ -47,13 +47,108 @@ pub(super) fn start() {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let Ok(auto) = CoCreateInstance::<_, IUIAutomation>(&CUIAutomation, None, CLSCTX_INPROC_SERVER) else { STARTED.store(false, Ordering::SeqCst); return };
         let Ok(all) = auto.CreateTrueCondition() else { STARTED.store(false, Ordering::SeqCst); return };
+        let mut round = 0u32;
+        let mut revealed: Option<Instant> = None;
+        let mut reveal_end: Option<Instant> = None;
         loop {
-            if let Some(list) = read(&auto, &all) {
-                if let Ok(mut g) = SNAP.lock() { *g = Some((Instant::now(), list)); }
+            // A press asked for by the dock is carried out within 100 ms (retried for ~3 s while the
+            // taskbar's buttons are still loading); the contents are re-read once a second.
+            if round == 80 {
+                // Dev aid: VIRE_DEV_PRESS=start|clock|quick|hidden presses that button once.
+                let a = match std::env::var("VIRE_DEV_PRESS").unwrap_or_default().as_str() {
+                    "start" => Some(TbAct::Start), "clock" => Some(TbAct::Clock), "quick" => Some(TbAct::QuickSettings), "hidden" => Some(TbAct::HiddenIcons), _ => None };
+                if let Some(a) = a { let _ = request(a); }
             }
-            std::thread::sleep(Duration::from_millis(1000));
+            let pending = ACT.lock().ok().and_then(|g| *g);
+            if let Some((act, t)) = pending {
+                let ok = press(&auto, &all, act);
+                if !ok && revealed.is_none() && round % 10 == 0 {
+                    // An auto-hidden taskbar exposes no buttons. Let it show for a moment (it stays
+                    // invisible: it is clipped to one pixel) so its buttons can be pressed.
+                    dbg("taskbar press: buttons not available -> letting the taskbar show for a moment");
+                    set_taskbar_autohide(false);
+                    revealed = Some(Instant::now());
+                }
+                if ok || t.elapsed() > Duration::from_secs(5) {
+                    if let Ok(mut g) = ACT.lock() { if g.map_or(false, |(a, _)| a == act) { *g = None; } }
+                    if revealed.is_some() { reveal_end = Some(Instant::now() + Duration::from_millis(if ok { 900 } else { 0 })); }
+                }
+            }
+            if let Some(t) = reveal_end {
+                if Instant::now() >= t { set_taskbar_autohide(true); revealed = None; reveal_end = None; }
+            }
+            if round % 10 == 0 {
+                if let Some(list) = read(&auto, &all) {
+                    if let Ok(mut g) = SNAP.lock() { *g = Some((Instant::now(), list)); }
+                }
+            }
+            round = round.wrapping_add(1);
+            std::thread::sleep(Duration::from_millis(100));
         }
     });
+}
+
+/// What the dock wants pressed on the real Windows taskbar.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum TbAct { Start, Clock, QuickSettings, HiddenIcons }
+
+static ACT: Mutex<Option<(TbAct, Instant)>> = Mutex::new(None);
+
+/// Presses the matching button of the real taskbar (UI Automation "Invoke", exactly what a click
+/// does) — no keystrokes are sent, so nothing leaks into a remote-desktop window (UltraViewer,
+/// AnyDesk, RDP…) that happens to be in front. Returns false when the worker is not running.
+pub(super) fn request(act: TbAct) -> bool {
+    if !STARTED.load(Ordering::SeqCst) { return false; }
+    if let Ok(mut g) = ACT.lock() { *g = Some((act, Instant::now())); }
+    true
+}
+
+unsafe fn press(auto: &IUIAutomation, all: &windows::Win32::UI::Accessibility::IUIAutomationCondition, act: TbAct) -> bool {
+    use windows::Win32::UI::Accessibility::{IUIAutomationInvokePattern, UIA_InvokePatternId};
+    let Some(tray) = FindWindowW(w!("Shell_TrayWnd"), PCWSTR::null()).ok() else { return false };
+    let Ok(root) = auto.ElementFromHandle(tray) else { return false };
+    let Ok(arr) = root.FindAll(TreeScope_Descendants, all) else { return false };
+    let Ok(n) = arr.Length() else { return false };
+    let (mut start, mut icons) = (None, Vec::new());
+    for i in 0..n {
+        let Ok(e) = arr.GetElement(i) else { continue };
+        match e.CurrentAutomationId().map(|b| b.to_string()).unwrap_or_default().as_str() {
+            "StartButton" => start = Some(e),
+            // Notification area, left to right: [^ hidden icons] … network, volume, battery, clock, [show desktop].
+            // (Located by position, not by name: the names change with the language of Windows.)
+            "SystemTrayIcon" => icons.push(e),
+            _ => {}
+        }
+    }
+    let k = icons.len();
+    let target = match act {
+        TbAct::Start => start,
+        TbAct::HiddenIcons => icons.first().cloned(),
+        TbAct::Clock => if k >= 2 { icons.get(k - 2).cloned() } else { None },
+        TbAct::QuickSettings => if k >= 4 { icons.get(k - 3).cloned() } else { None },
+    };
+    let Some(t) = target else { dbg(&format!("taskbar press {act:?}: no target (start={} tray icons={k} of {n} elements)", start_found(&arr, n))); return false };
+    use windows::Win32::UI::Accessibility::{IUIAutomationTogglePattern, IUIAutomationLegacyIAccessiblePattern, UIA_TogglePatternId, UIA_LegacyIAccessiblePatternId};
+    let ok = if let Some(inv) = t.GetCurrentPattern(UIA_InvokePatternId).ok().and_then(|p| p.cast::<IUIAutomationInvokePattern>().ok()) {
+        inv.Invoke().is_ok()
+    } else if let Some(tg) = t.GetCurrentPattern(UIA_TogglePatternId).ok().and_then(|p| p.cast::<IUIAutomationTogglePattern>().ok()) {
+        tg.Toggle().is_ok()
+    } else if let Some(lg) = t.GetCurrentPattern(UIA_LegacyIAccessiblePatternId).ok().and_then(|p| p.cast::<IUIAutomationLegacyIAccessiblePattern>().ok()) {
+        lg.DoDefaultAction().is_ok()
+    } else {
+        let r = t.CurrentBoundingRectangle().unwrap_or_default();
+        dbg(&format!("taskbar press {act:?}: no usable pattern; rect={},{},{},{} class={}", r.left, r.top, r.right, r.bottom, t.CurrentClassName().map(|b| b.to_string()).unwrap_or_default()));
+        return false;
+    };
+    dbg(&format!("taskbar press {act:?} -> {ok}"));
+    ok
+}
+
+unsafe fn start_found(arr: &windows::Win32::UI::Accessibility::IUIAutomationElementArray, n: i32) -> String {
+    // Debug summary: automation ids / names of the non-app elements.
+    (0..n).filter_map(|i| arr.GetElement(i).ok()).map(|e| format!("{}|{}",
+        e.CurrentAutomationId().map(|b| b.to_string()).unwrap_or_default(), e.CurrentName().map(|b| b.to_string()).unwrap_or_default()))
+        .filter(|s| !s.starts_with("Appid")).collect::<Vec<_>>().join(" ; ")
 }
 
 unsafe fn read(auto: &IUIAutomation, all: &windows::Win32::UI::Accessibility::IUIAutomationCondition) -> Option<Vec<TbButton>> {

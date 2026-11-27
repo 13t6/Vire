@@ -1,4 +1,4 @@
-# Vire — Live wallpaper + Dock cho Windows (Rust)
+﻿# Vire — Live wallpaper + Dock cho Windows (Rust)
 
 Viết bằng Rust. Tác giả: **NSH**.
 
@@ -29,9 +29,9 @@ Mở `dist\Vire\Vire.exe`. Không cần cài đặt; chỉ cần giữ thư mụ
   - **Vire Dock** là Dock riêng của Vire, đặt được **dưới / trái / phải**. Icon phóng to và đẩy icon bên cạnh như Mac. Có thể tự ẩn (không để lại vệt nào) hoặc giữ chỗ trên màn hình để cửa sổ phóng to không đè lên. Đồng hồ kèm thứ/ngày nằm trong Dock (bấm để mở lịch và thông báo), có nút Wi-Fi/âm lượng/pin. Nhiều màn hình: mỗi màn hình có một Dock riêng (cùng cấu hình, cùng danh sách app), tự thêm/bớt khi cắm hoặc rút màn hình. Thứ tự app theo đúng taskbar Windows. Có hai kiểu: kính (mặc định) và **Phản chiếu** (không có nền, icon soi bóng mờ dần bên dưới). Nút **^** mở đúng khay "biểu tượng ẩn" của Windows. Chuột phải vào icon app mở menu giống Windows (tên app, Ghim/Bỏ ghim, Đóng cửa sổ, Kết thúc tác vụ); chuột phải vào Start/đồng hồ/khay mở menu tương ứng của Windows. Dock dùng lại dữ liệu của taskbar Windows nên hai bên không lệch nhau (xem bên dưới).
   - **Chất liệu** *Acrylic / Mica / Glass* áp cho cửa sổ Vire, Vire Dock, Explorer và Settings. Kính vẫn giữ nguyên khi cửa sổ không được chọn.
   - **Kính cho hệ thống**: bật hiệu ứng trong suốt của Windows cho Start, thanh thông báo, Settings và File Explorer.
-  - Dock lấy danh sách app, thứ tự và app đã ghim **trực tiếp từ taskbar Windows** (qua UI Automation); rê chuột lên icon hiện ảnh xem trước cửa sổ (bấm để chuyển, bấm chuột giữa để đóng). Ghim/bỏ ghim ở taskbar Windows thì Dock tự theo; ghim trên Dock chỉ có tác dụng trên Dock vì Windows không cho app khác sửa taskbar.
+  - Dock lấy danh sách app, thứ tự và app đã ghim **trực tiếp từ taskbar Windows** (qua UI Automation); rê chuột lên icon hiện ảnh xem trước cửa sổ (bấm để chuyển, bấm chuột giữa hoặc nút × để đóng). Các nút Start, lịch, Wi-Fi/âm lượng và "^" bấm thẳng nút thật của taskbar (không gửi phím nên không lọt sang UltraViewer/AnyDesk). Ghim/bỏ ghim ở taskbar Windows thì Dock tự theo; ghim trên Dock chỉ có tác dụng trên Dock vì Windows không cho app khác sửa taskbar.
   - Lưu ý: icon khay của app khác và jump list (mục gần đây khi chuột phải) hiện chỉ có trên taskbar Windows.
-- **Cài đặt**: Lấp đầy / Vừa khung, *tự nghỉ khi không thấy desktop* (cửa sổ phóng to, game, phim toàn màn hình; dừng riêng từng màn hình), dừng khi dùng pin, khởi động cùng Windows.
+- **Cài đặt**: Lấp đầy / Vừa khung, *tự nghỉ khi không thấy desktop* (cửa sổ phóng to, game, phim toàn màn hình; dừng riêng từng màn hình), nghỉ sớm khi một cửa sổ chiếm ≥ 85% màn hình (tuỳ chọn), dừng khi dùng pin, khởi động cùng Windows, hiện trong tìm kiếm Windows (lối tắt Start Menu; gõ "Vire" để mở).
 - **Đóng cửa sổ**: hình nền và Dock vẫn chạy, giao diện được giải phóng khỏi RAM. Mở lại bằng icon dưới khay; chuột phải vào icon để chọn **Thoát** (taskbar Windows và hình nền tĩnh được trả lại).
 - `Vire.exe --tray`: chạy ẩn (dùng cho khởi động cùng Windows). `--tab=gallery|displays|music|widgets|taskbar|theme|settings`: mở thẳng vào tab đó. Thứ tự tab: Hình nền · Màn hình · Nhạc · Dock & Taskbar · Giao diện · Cài đặt (phần giới thiệu nằm cuối trang Cài đặt).
 
@@ -106,3 +106,4 @@ mọi thứ dùng chung khoá (`AppState`, `Hub`) được giữ ngắn, không 
 
 ## Nơi lưu dữ liệu (portable)
 Hình nền, nhạc, cài đặt, thư viện, widget và log nằm trong **`Data`** ngay cạnh `Vire.exe`. Lần đầu chạy bản này, dữ liệu cũ ở `Documents\Vire` và `%APPDATA%\Vire` được **chuyển** sang `Data` (đường dẫn trong JSON được sửa theo). Thư mục không ghi được thì Vire quay về hai chỗ cũ. `build.ps1` không bao giờ đóng `Data` vào gói phát hành.
+

@@ -206,6 +206,10 @@ struct Dock {
     /// None = the main monitor (the "leader" dock, which also owns the config and the taskbar
     /// takeover); Some = a follower dock on another monitor.
     mon_rect: Option<RECT>,
+    /// The backdrop behind this dock is light: icons and text are drawn dark (see backdrop.rs).
+    light: bool,
+    luma: f32,
+    luma_set: bool,
 }
 
 // docks[0] is the leader (main monitor); the rest follow it, one per extra monitor.
@@ -213,6 +217,7 @@ thread_local! { static DOCKS: RefCell<Vec<Dock>> = const { RefCell::new(Vec::new
 thread_local! { static DOCK_ENV: std::cell::Cell<(isize, isize)> = const { std::cell::Cell::new((0, 0)) }; } // (owner hwnd, hinstance)
 
 
+mod backdrop;
 mod click;
 mod draw;
 mod items;
@@ -262,18 +267,21 @@ pub fn preview(app: Arc<Mutex<AppState>>, edge: Edge, material: Option<Material>
         for _ in 0..80 { d.animate(); }
         let (bx, by, bw, bh) = d.body_rect(1.0);
         let (cx, cy, cw, ch) = d.content_rect(1.0);
+        // Dev aid: VIRE_PREVIEW_LIGHT=1 previews the dock over a light backdrop (inverted colours).
+        let light = std::env::var_os("VIRE_PREVIEW_LIGHT").is_some();
+        d.light = light;
         let content = d.render_content();
-        // Sample backdrop: the Cyber Sunset palette as a soft gradient.
+        // Sample backdrop: the Cyber Sunset palette as a soft gradient (or a light one)...
         let pad = 40;
         let (w, h) = (cw + pad * 2, ch + pad * 2);
         let mut bg = Canvas::new(w, h);
         for y in 0..h { for x in 0..w {
             let t = y as f32 / h as f32;
             let u = x as f32 / w as f32;
-            bg.blend(x, y, rgba((40.0 + 160.0 * t) as u8, (10.0 + 40.0 * u) as u8, (70.0 + 60.0 * (1.0 - t)) as u8, 1.0), 1.0);
+            bg.blend(x, y, if light { rgba((236.0 - 14.0 * t) as u8, (238.0 - 10.0 * u) as u8, 246, 1.0) } else { rgba((40.0 + 160.0 * t) as u8, (10.0 + 40.0 * u) as u8, (70.0 + 60.0 * (1.0 - t)) as u8, 1.0) }, 1.0);
         } }
         // Approximate the system blur/tint under the slab so the PNG resembles the real thing.
-        let blur_tint = match d.cfg.material { Material::Glass => rgba(255, 255, 255, 0.10), Material::Acrylic => rgba(30, 30, 40, 0.45), Material::Mica => rgba(34, 30, 38, 0.80) };
+        let blur_tint = match d.cfg.material { Material::Glass => rgba(255, 255, 255, 0.10), Material::Acrylic => if light { rgba(240, 242, 248, 0.45) } else { rgba(30, 30, 40, 0.45) }, Material::Mica => rgba(34, 30, 38, 0.80) };
         let (ox, oy) = (pad - cx, pad - cy);
         fill_rrect(&mut bg, R { x: (bx + ox) as f32, y: (by + oy) as f32, w: bw as f32, h: bh as f32 }, CORNER * d.geo.s, |_| blur_tint);
         for (src, sx, sy) in [(&content, pad, pad)] {
