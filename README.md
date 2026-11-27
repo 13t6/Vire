@@ -4,6 +4,11 @@ Viết bằng Rust. Tác giả: **NSH**.
 
 > **Giao diện:** kiểu Cyberpunk / Sci-Fi HUD — nền `#050505`/`#0D1117` có lưới và đường quét, neon cyan `#00E5FF` / magenta `#FF00FF` / vàng `#FCEE09`, góc vát 45° (không bo tròn), viền 1px phát sáng, font mono (Consolas), hover đặc màu neon đảo chữ + hiệu ứng glitch, trang trí HUD (ngoặc `[ ]`, tâm ngắm, mã vạch, chuỗi hex). Mã vẽ nằm ở `src/ui/hud.rs`, chỉ dùng hình vẽ của egui — không thêm ảnh hay thư viện.
 
+## Yêu cầu
+- **Hệ điều hành:** Windows 11 (đã thử trên bản 24H2 trở lên). Windows 10 có thể chạy được một phần nhưng **chưa được kiểm tra**: Dock đọc danh sách app từ taskbar kiểu Windows 11 và một số hiệu ứng kính mờ cần Windows 11.
+- **Không hỗ trợ Linux và macOS.** Vire dùng trực tiếp các thành phần riêng của Windows (cửa sổ desktop Progman/WorkerW, Media Foundation, WASAPI, DWM, UI Automation), nên không thể chạy trên hệ điều hành khác.
+- Không cần cài đặt, không cần quyền quản trị. Chỉ dùng DLL có sẵn của Windows.
+
 ## Chạy
 Mở `dist\Vire\Vire.exe`. Không cần cài đặt; chỉ cần giữ thư mục `samples` nằm cạnh file exe.
 
@@ -18,7 +23,8 @@ Mở `dist\Vire\Vire.exe`. Không cần cài đặt; chỉ cần giữ thư mụ
   - **Vire Dock** là Dock riêng của Vire, đặt được **dưới / trái / phải**. Icon phóng to và đẩy icon bên cạnh như Mac. Có thể tự ẩn (không để lại vệt nào) hoặc giữ chỗ trên màn hình để cửa sổ phóng to không đè lên. Đồng hồ kèm thứ/ngày nằm trong Dock (bấm để mở lịch và thông báo), có nút Wi-Fi/âm lượng/pin. Nhiều màn hình: mỗi màn hình có một Dock riêng (cùng cấu hình, cùng danh sách app), tự thêm/bớt khi cắm hoặc rút màn hình. Thứ tự app cố định như Windows (app mới nối vào cuối). Nút **^** mở đúng khay "biểu tượng ẩn" của Windows. Chuột phải vào icon app mở menu giống Windows (tên app, Ghim/Bỏ ghim, Đóng cửa sổ, Kết thúc tác vụ); chuột phải vào Start/đồng hồ/khay mở menu tương ứng của Windows. Lần bật đầu tiên tự lấy các app đã ghim trên taskbar Windows.
   - **Chất liệu** *Acrylic / Mica / Glass* áp cho cửa sổ Vire, Vire Dock, Explorer và Settings. Kính vẫn giữ nguyên khi cửa sổ không được chọn.
   - **Kính cho hệ thống**: bật hiệu ứng trong suốt của Windows cho Start, thanh thông báo, Settings và File Explorer.
-  - Lưu ý: khi dùng Vire Dock thì icon khay của app khác, jump list và ảnh xem trước cửa sổ chỉ có trên taskbar Windows.
+  - Dock lấy danh sách app, thứ tự và app đã ghim **trực tiếp từ taskbar Windows** (qua UI Automation); rê chuột lên icon hiện ảnh xem trước cửa sổ (bấm để chuyển, bấm chuột giữa để đóng). Ghim/bỏ ghim ở taskbar Windows thì Dock tự theo; ghim trên Dock chỉ có tác dụng trên Dock vì Windows không cho app khác sửa taskbar.
+  - Lưu ý: icon khay của app khác và jump list (mục gần đây khi chuột phải) hiện chỉ có trên taskbar Windows.
 - **Cài đặt**: Lấp đầy / Vừa khung, *tự nghỉ khi không thấy desktop* (cửa sổ phóng to, game, phim toàn màn hình; dừng riêng từng màn hình), dừng khi dùng pin, khởi động cùng Windows.
 - **Đóng cửa sổ**: hình nền và Dock vẫn chạy, giao diện được giải phóng khỏi RAM. Mở lại bằng icon dưới khay; chuột phải vào icon để chọn **Thoát** (taskbar Windows và hình nền tĩnh được trả lại).
 - `Vire.exe --tray`: chạy ẩn (dùng cho khởi động cùng Windows). `--tab=displays|music|taskbar|theme|settings`: mở thẳng vào tab đó. Thứ tự tab: Hình nền · Màn hình · Nhạc · Dock & Taskbar · Giao diện · Cài đặt (phần giới thiệu nằm cuối trang Cài đặt).
