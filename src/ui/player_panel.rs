@@ -13,18 +13,18 @@ fn tcy() -> Color32 { hud::tone(hud::CYAN) }
 fn tye() -> Color32 { hud::tone(hud::YELLOW) }
 fn tmg() -> Color32 { hud::tone(hud::MAGENTA) }
 
-fn fmt_time(secs: f64) -> String { let s = secs.max(0.0) as u64; format!("{}:{:02}", s / 60, s % 60) }
+pub(super) fn fmt_time(secs: f64) -> String { let s = secs.max(0.0) as u64; format!("{}:{:02}", s / 60, s % 60) }
 
 // ---- little vector icons (45° HUD style, no rounding)
 
 fn tri(p: &egui::Painter, a: Pos2, b: Pos2, c: Pos2, col: Color32) { p.add(Shape::convex_polygon(vec![a, b, c], col, Stroke::NONE)); }
 
-fn ic_play(p: &egui::Painter, c: Pos2, s: f32, col: Color32) { tri(p, c + vec2(-0.35 * s, -0.5 * s), c + vec2(-0.35 * s, 0.5 * s), c + vec2(0.55 * s, 0.0), col); }
-fn ic_pause(p: &egui::Painter, c: Pos2, s: f32, col: Color32) {
+pub(super) fn ic_play(p: &egui::Painter, c: Pos2, s: f32, col: Color32) { tri(p, c + vec2(-0.35 * s, -0.5 * s), c + vec2(-0.35 * s, 0.5 * s), c + vec2(0.55 * s, 0.0), col); }
+pub(super) fn ic_pause(p: &egui::Painter, c: Pos2, s: f32, col: Color32) {
     p.rect_filled(Rect::from_center_size(c + vec2(-0.25 * s, 0.0), vec2(0.28 * s, s)), 0.0, col);
     p.rect_filled(Rect::from_center_size(c + vec2(0.25 * s, 0.0), vec2(0.28 * s, s)), 0.0, col);
 }
-fn ic_skip(p: &egui::Painter, c: Pos2, s: f32, col: Color32, fwd: bool) {
+pub(super) fn ic_skip(p: &egui::Painter, c: Pos2, s: f32, col: Color32, fwd: bool) {
     let d = if fwd { 1.0 } else { -1.0 };
     tri(p, c + vec2(-0.5 * s * d, -0.45 * s), c + vec2(-0.5 * s * d, 0.45 * s), c + vec2(0.35 * s * d, 0.0), col);
     p.rect_filled(Rect::from_center_size(c + vec2(0.5 * s * d, 0.0), vec2(0.14 * s, 0.9 * s)), 0.0, col);
@@ -71,7 +71,7 @@ fn ic_list(p: &egui::Painter, c: Pos2, col: Color32) {
 }
 
 /// Flat square icon button; returns the response and whether it is hot.
-fn ibtn(ui: &mut Ui, id: &str, center: Pos2, size: f32, tip: &str) -> (Response, bool) {
+pub(super) fn ibtn(ui: &mut Ui, id: &str, center: Pos2, size: f32, tip: &str) -> (Response, bool) {
     let r = Rect::from_center_size(center, vec2(size, size));
     let resp = ui.interact(r, ui.id().with(id), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     let hot = resp.hovered();
@@ -90,8 +90,22 @@ impl App {
         let song = cur.as_ref().and_then(|c| st.song(c)).cloned();
         let has_lrc = cur.as_ref().map_or(false, |c| crate::lyrics::lrc_for(c).is_some());
 
-        hud::neon_panel(ui.painter(), r, 18.0, if hud::soft() { Color32::from_rgba_unmultiplied(20, 19, 30, 200) } else { self.pal.card }, tcy(), 0.8);
+        if hud::soft() {
+            // The wallpaper's own picture, darkened and tinted with its accent colour, is the card's
+            // backdrop — the card takes the colours of what is on screen instead of a flat grey.
+            self.paint_media(ui, ctx, item, r, 0.0, 0.0);
+            let p = ui.painter();
+            p.rect_filled(r, 12.0, Color32::from_black_alpha(188));
+            p.rect_filled(r, 12.0, hud::with_alpha(hud::accent(), 26));
+            p.rect_stroke(r, 12.0, Stroke::new(1.0_f32, Color32::from_white_alpha(36)));
+        } else {
+            hud::neon_panel(ui.painter(), r, 18.0, self.pal.card, tcy(), 0.8);
+        }
         let inner_w = r.width() - 28.0;
+        // Taller panel (wide window): the cover takes most of the extra height and the controls move
+        // down with it, so the card is filled instead of leaving an empty gap.
+        let grow = (r.height() - 300.0).max(0.0);
+        let dy = (grow * 0.62).min(120.0);
         // Header.
         ui.painter().text(r.min + vec2(16.0, 15.0), Align2::LEFT_CENTER, if hud::soft() { "Đang phát" } else { "NOW//PLAYING" }, if hud::soft() { semi(12.0) } else { FontId::monospace(10.0) }, hud::with_alpha(tcy(), 170));
         // Header tag: this song is the one matched to the wallpaper (it follows the wallpaper).
@@ -100,7 +114,7 @@ impl App {
         else { ui.painter().text(r.right_top() + vec2(-16.0, 15.0), Align2::RIGHT_CENTER, if hud::soft() { format!("{qlen} bài") } else { format!("SRC//LOCAL  {}", hud::hex(qlen as u32 + 7, 3)) }, FontId::monospace(9.5), hud::with_alpha(tmg(), 170)); }
 
         // Cover (the wallpaper's own picture) or the collection list.
-        let art = Rect::from_min_size(r.min + vec2(14.0, 30.0), vec2(inner_w, 102.0));
+        let art = Rect::from_min_size(r.min + vec2(14.0, 30.0), vec2(inner_w, 102.0 + dy));
         if !self.pl_list {
             self.paint_media(ui, ctx, item, art, 0.0, 0.55);
             let p = ui.painter();
@@ -115,16 +129,16 @@ impl App {
                 }
             }
         } else {
-            changed |= self.collection_list(ui, st, Rect::from_min_max(art.min, pos2(art.max.x, r.top() + 184.0)), cur.as_ref());
+            changed |= self.collection_list(ui, st, Rect::from_min_max(art.min, pos2(art.max.x, r.top() + 184.0 + dy)), cur.as_ref());
         }
 
         // Title / artist + favourite.
-        let ty = r.top() + 150.0;
+        let ty = r.top() + 150.0 + dy;
         let title = song.as_ref().map(|s| s.title.clone()).unwrap_or_else(|| "Chưa phát bài nào".into());
         let artist = song.as_ref().map(|s| if s.artist.is_empty() { "Nghệ sĩ không rõ".to_string() } else { s.artist.clone() }).unwrap_or_else(|| "Bấm ▶ để phát nhạc của bạn".into());
         if !self.pl_list {
             let p = ui.painter();
-            p.text(pos2(r.left() + 16.0, ty), Align2::LEFT_CENTER, elide(p, &title, bold(15.0), inner_w - 40.0), bold(15.0), Color32::WHITE);
+            p.text(pos2(r.left() + 16.0, ty), Align2::LEFT_CENTER, elide(p, &title, bold(if hud::soft() { 18.0 } else { 15.0 }), inner_w - 40.0), bold(if hud::soft() { 18.0 } else { 15.0 }), Color32::WHITE);
             p.text(pos2(r.left() + 16.0, ty + 19.0), Align2::LEFT_CENTER, elide(p, &artist, FontId::monospace(11.0), inner_w - 40.0), FontId::monospace(11.0), muted());
             if let Some(s) = &song {
                 let (resp, hot) = ibtn(ui, "pl_like", pos2(r.right() - 26.0, ty + 8.0), 26.0, "Thêm / bỏ yêu thích");
@@ -134,7 +148,7 @@ impl App {
         }
 
         // Seek bar.
-        let sy = r.top() + 196.0;
+        let sy = r.top() + 196.0 + dy;
         let bar = Rect::from_min_max(pos2(r.left() + 16.0, sy - 8.0), pos2(r.right() - 16.0, sy + 8.0));
         let resp = ui.interact(bar, ui.id().with("pl_seek"), Sense::click_and_drag()).on_hover_cursor(egui::CursorIcon::PointingHand);
         let at = |x: f32| ((x - bar.left()) / bar.width()).clamp(0.0, 1.0);
@@ -163,7 +177,7 @@ impl App {
         p.text(pos2(bar.right(), sy + 15.0), Align2::RIGHT_CENTER, fmt_time(dur), FontId::monospace(10.0), muted());
 
         // Transport row: play mode · prev · PLAY · next · volume (speaker), evenly spaced.
-        let cy = r.top() + 244.0;
+        let cy = r.top() + 244.0 + dy;
         let step = (r.width() - 44.0) / 4.0;
         let xs: [f32; 5] = std::array::from_fn(|i| r.left() + 22.0 + step * i as f32);
         let col_of = |on: bool, hot: bool| if hud::soft() { if on { hud::accent() } else if hot { Color32::WHITE } else { Color32::from_white_alpha(200) } } else if on { tye() } else if hot { tcy() } else { subtle() };
@@ -188,7 +202,7 @@ impl App {
             // White disc with a dark glyph, growing a touch under the pointer.
             let k = ui.ctx().animate_bool_with_time(presp.id, presp.hovered(), 0.15);
             ui.painter().circle_filled(pr.center() + vec2(0.0, 3.0), 24.0, Color32::from_black_alpha(60));
-            ui.painter().circle_filled(pr.center(), 23.0 + 2.0 * k, Color32::from_rgb(245, 245, 247));
+            ui.painter().circle_filled(pr.center(), 23.0 + 2.0 * k, hud::accent().lerp_to_gamma(Color32::WHITE, 0.6));
             Color32::from_rgb(17, 19, 24)
         } else {
             hud::neon_panel(ui.painter(), pr, 13.0, if presp.hovered() { tye() } else { tcy() }, if presp.hovered() { tye() } else { tcy() }, 1.0);

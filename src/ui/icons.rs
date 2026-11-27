@@ -3,7 +3,7 @@
 use super::*;
 
 #[derive(Clone, Copy)]
-pub(super) enum Icon { Gallery, Displays, Taskbar, Gear, Play, Pause, Speaker, Mute, Plus, Trash, Folder, Music, Palette, Fold(bool), Widgets }
+pub(super) enum Icon { Gallery, Displays, Taskbar, Gear, Play, Pause, Speaker, Mute, Plus, Trash, Folder, Music, Palette, Fold(bool), Widgets, Globe }
 
 impl From<Tab> for Icon {
     fn from(t: Tab) -> Self {
@@ -78,6 +78,18 @@ pub(super) fn paint_icon(p: &egui::Painter, c: Pos2, icon: Icon, col: Color32) {
             p.rect_stroke(r(-8.0, -7.0, 9.0, 14.0), Rounding::same(2.0), s);
             p.rect_stroke(r(3.0, -7.0, 5.0, 6.0), Rounding::same(1.5), s);
             p.rect_stroke(r(3.0, 1.0, 5.0, 6.0), Rounding::same(1.5), s);
+        }
+        Icon::Globe => {
+            // A globe: circle, equator, two parallels and a meridian ellipse.
+            let thin = Stroke::new(1.2_f32, col);
+            p.circle_stroke(c, 7.6, s);
+            p.line_segment([c + vec2(-7.6, 0.0), c + vec2(7.6, 0.0)], thin);
+            for y in [-4.0_f32, 4.0] {
+                let w = (7.6_f32 * 7.6 - y * y).sqrt();
+                p.line_segment([c + vec2(-w, y), c + vec2(w, y)], thin);
+            }
+            let pts: Vec<Pos2> = (0..28).map(|i| { let a = i as f32 / 28.0 * std::f32::consts::TAU; c + vec2(a.cos() * 3.5, a.sin() * 7.6) }).collect();
+            p.add(Shape::closed_line(pts, thin));
         }
         Icon::Palette => {
             p.circle_stroke(c, 7.5, s);

@@ -58,6 +58,34 @@ impl App {
         });
     }
 
+    /// "Tìm thêm" button: a small list of sites with free live wallpapers. Vire downloads nothing
+    /// itself — you pick a video there, save it, and drop it into Vire.
+    pub(super) fn find_more(&mut self, ui: &mut Ui) {
+        const SITES: [(&str, &str, &str); 5] = [
+            ("MoeWalls", "Anime, game, phong cảnh", "https://moewalls.com/"),
+            ("MotionBGs", "Hình nền động đủ thể loại", "https://motionbgs.com/"),
+            ("Pexels Videos", "Video miễn phí, giấy phép Pexels", "https://www.pexels.com/videos/"),
+            ("Pixabay Videos", "Video miễn phí, giấy phép Pixabay", "https://pixabay.com/videos/"),
+            ("Mixkit", "Video miễn phí, giấy phép Mixkit", "https://mixkit.co/free-stock-video/"),
+        ];
+        let resp = pill_button(ui, Some(Icon::Globe), "Tìm thêm", false)
+            .on_hover_text("Mở trang web có hình nền động miễn phí. Tải video về rồi kéo thả vào Vire.");
+        let pid = ui.make_persistent_id("find_more_pop");
+        if resp.clicked() { ui.memory_mut(|m| m.toggle_popup(pid)); }
+        egui::popup_below_widget(ui, pid, &resp, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+            ui.set_min_width(300.0);
+            ui.label(RichText::new("Tìm hình nền động ở:").font(semi(13.0)).color(muted()));
+            ui.add_space(4.0);
+            for (name, sub, url) in SITES {
+                let r = ui.add(egui::Button::new(RichText::new(format!("{name}   ·   {sub}")).font(semi(13.0))).frame(false)).on_hover_text(url);
+                if r.clicked() { open_url(url); ui.memory_mut(|m| m.close_popup()); }
+            }
+            ui.add_space(6.0);
+            ui.label(RichText::new("Hãy xem giấy phép của từng video trước khi dùng hoặc đăng lại.").size(11.5).color(muted()));
+            ui.label(RichText::new("Tải về xong: kéo thả vào Vire hoặc bấm “Thêm video”.").size(11.5).color(muted()));
+        });
+    }
+
     // ---------- Gallery ----------
     pub(super) fn gallery(&mut self, ui: &mut Ui, ctx: &egui::Context, st: &mut AppState) -> bool {
         let mut changed = false;
@@ -69,6 +97,7 @@ impl App {
                 if pill_button(ui, Some(Icon::Folder), "Thư mục video", false).on_hover_text(format!("Bỏ video vào đây, Vire tự nạp mỗi lần mở:\n{}\n(nhạc: thư mục Music cùng cấp)", videos.display())).clicked() {
                     open_url(&videos.to_string_lossy());
                 }
+                self.find_more(ui);
                 if self.importing > 0 { ui.spinner(); ui.label(RichText::new("Đang nhập…").color(muted())); }
             });
         });

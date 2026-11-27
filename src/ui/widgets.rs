@@ -31,7 +31,9 @@ pub(super) fn up(s: &str) -> String { if hud::soft() { s.to_string() } else { s.
 
 /// Cinematic: soft rounded button (violet when primary, frosted glass otherwise).
 pub(super) fn soft_button(ui: &mut Ui, icon: Option<Icon>, text: &str, primary: bool) -> Response {
-    let galley = ui.painter().layout_no_wrap(text.to_string(), semi(13.0), tx());
+    // PLACEHOLDER colour: the colour is chosen below (it depends on the fill) and passed to `galley()`
+    // — a colour baked in here would win over it, white text on a light accent was unreadable.
+    let galley = ui.painter().layout_no_wrap(text.to_string(), semi(13.0), Color32::PLACEHOLDER);
     let icon_w = if icon.is_some() { 22.0 } else { 0.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(galley.size().x + icon_w + 34.0, 36.0), Sense::click());
     let t = ui.ctx().animate_bool_with_time(resp.id, resp.hovered(), 0.12);
@@ -40,7 +42,7 @@ pub(super) fn soft_button(ui: &mut Ui, icon: Option<Icon>, text: &str, primary: 
     if primary { p.rect_filled(rect.expand(2.0 + 2.0 * t), 20.0, hud::with_alpha(hud::accent(), (30.0 + 30.0 * t) as u8)); }
     p.rect_filled(rect, 18.0, fill);
     if !primary { p.rect_stroke(rect, 18.0, Stroke::new(1.0_f32, Color32::from_white_alpha((30.0 + 30.0 * t) as u8))); }
-    let fg = if primary { hud::on_accent() } else { tx() };
+    let fg = if primary { hud::on_color(fill) } else { tx() };
     let mut x = rect.left() + 17.0;
     if let Some(ic) = icon { paint_icon(p, pos2(x + 7.0, rect.center().y), ic, fg); x += icon_w; }
     p.galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);

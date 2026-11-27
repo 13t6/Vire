@@ -262,6 +262,7 @@ impl App {
                     if pill_button(ui, Some(Icon::Folder), "Thư mục", false).on_hover_text(format!("Bỏ video vào đây, Vire tự nạp mỗi lần mở:\n{}", videos.display())).clicked() {
                         open_url(&videos.to_string_lossy());
                     }
+                    self.find_more(ui);
                     ui.add(egui::TextEdit::singleline(&mut self.wall_q).hint_text("🔍  Tìm hình nền…").desired_width(220.0).margin(vec2(12.0, 8.0)));
                     if self.importing > 0 { ui.spinner(); }
                 });
@@ -503,7 +504,7 @@ impl App {
                     p.galley(pos2(card.left() + 18.0, pv.bottom() + 38.0), g, Color32::from_white_alpha(150));
                     let b = Rect::from_min_size(pos2(card.left() + 18.0, card.bottom() - 46.0), vec2(w - 36.0, 32.0));
                     let (bf, bt, btxt) = if on { (Color32::from_white_alpha(14), Color32::from_white_alpha(170), "✓  Đang dùng") }
-                        else { (if soft { hud::accent() } else { CYAN }, Color32::from_rgb(14, 10, 26), "Dùng giao diện này") };
+                        else { let f = if soft { hud::accent() } else { CYAN }; (f, if soft { hud::on_color(f) } else { Color32::from_rgb(14, 10, 26) }, "Dùng giao diện này") };
                     p.rect_filled(b, if soft { 16.0 } else { 0.0 }, bf);
                     p.text(b.center(), Align2::CENTER_CENTER, btxt, semi(13.0), bt);
                     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !on {

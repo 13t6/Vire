@@ -309,7 +309,7 @@ impl Wd {
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
             self.shown = true;
             place_above_desktop(self.hwnd);
-        } else if self.last_z.elapsed().as_secs() >= 3 {
+        } else if self.last_z.elapsed().as_millis() >= 250 {
             self.last_z = std::time::Instant::now();
             place_above_desktop(self.hwnd);
         }
@@ -434,7 +434,12 @@ pub(crate) unsafe fn place_above_desktop_n(hwnd: HWND, steps: usize) {
     for _ in 0..steps {
         match GetWindow(w, GW_HWNDPREV) { Ok(p) if !p.is_invalid() => { if p == hwnd { return; } w = p; } _ => break }
     }
-    let _ = SetWindowPos(hwnd, host, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    // Directly ABOVE the desktop: insert after the window that is just above it (SetWindowPos puts a
+    // window *behind* the one it is inserted after). While "Show desktop" (Win+D) is on, Windows
+    // raises the desktop above everything — nothing is above it — and then the widget goes to the
+    // very top, which is right at that moment (all other windows are minimised).
+    let after = GetWindow(host, GW_HWNDPREV).ok().filter(|p| !p.is_invalid() && *p != hwnd).unwrap_or(HWND_TOP);
+    let _ = SetWindowPos(hwnd, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
 // ------------------------------------------------------------------ window

@@ -138,7 +138,7 @@ impl Default for Settings {
             w_opacity: 0.78,
             w_always: true,
             lyrics_on: false,
-            ui_theme: 0,
+            ui_theme: 1, // Cinematic Dark for new installs
             ui_compact: false,
             live_wallpaper: true,
         }

@@ -36,10 +36,15 @@ static ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(
 pub fn set_accent(c: Color32) { ACCENT.store(((c.r() as u32) << 16) | ((c.g() as u32) << 8) | c.b() as u32, std::sync::atomic::Ordering::Relaxed); }
 pub fn accent() -> Color32 { let v = ACCENT.load(std::sync::atomic::Ordering::Relaxed); Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8) }
 /// Readable glyph colour on top of the accent.
-pub fn on_accent() -> Color32 {
-    let a = accent();
-    let l = 0.2126 * a.r() as f32 + 0.7152 * a.g() as f32 + 0.0722 * a.b() as f32;
-    if l > 150.0 { C_CHARCOAL } else { Color32::WHITE }
+pub fn on_accent() -> Color32 { on_color(accent()) }
+
+/// Text colour that reads best on top of `c`: whichever of white / near-black has the higher
+/// WCAG contrast ratio (white on a mid green is unreadable; this picks the dark one there).
+pub fn on_color(c: Color32) -> Color32 {
+    let lin = |v: u8| { let s = v as f32 / 255.0; if s <= 0.03928 { s / 12.92 } else { ((s + 0.055) / 1.055).powf(2.4) } };
+    let l = 0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b());
+    let dark = 0.2126 * lin(C_CHARCOAL.r()) + 0.7152 * lin(C_CHARCOAL.g()) + 0.0722 * lin(C_CHARCOAL.b());
+    if 1.05 / (l + 0.05) >= (l + 0.05) / (dark + 0.05) { Color32::WHITE } else { C_CHARCOAL }
 }
 
 /// Maps a HUD colour to its Cinematic counterpart (alpha kept). Identity in the HUD theme.

@@ -24,6 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 pub(super) const WM_HUB: u32 = WM_APP + 7;
 const T_RENDER: usize = 1;
 const T_SLOW: usize = 2;
+const T_Z: usize = 3;
 
 struct Win {
     id: u32,
@@ -56,7 +57,6 @@ struct Host {
     ver: u64,
     covered: Vec<String>,
     covered_at: Instant,
-    z_at: Instant,
     builtin_playing: bool,
 }
 
@@ -81,8 +81,9 @@ unsafe fn thread_main(hub: Arc<Hub>, engine: crate::engine::Engine) {
     crate::vdock::dbg("widgets: host thread started");
     let hwnd = match CreateWindowExW(WINDOW_EX_STYLE(0), w!("VireWidgetHost"), w!("Vire Widgets"), WS_POPUP, 0, 0, 0, 0, HWND_MESSAGE, None, hinst, None) { Ok(h) => h, Err(e) => { crate::vdock::dbg(&format!("widgets: host window failed: {e}")); return; } };
     hub.set_host_thread(windows::Win32::System::Threading::GetCurrentThreadId());
-    HOST.with(|h| *h.borrow_mut() = Some(Host { hub, engine, hwnd, wins: Vec::new(), ver: 0, covered: Vec::new(), covered_at: Instant::now() - Duration::from_secs(5), z_at: Instant::now(), builtin_playing: false }));
+    HOST.with(|h| *h.borrow_mut() = Some(Host { hub, engine, hwnd, wins: Vec::new(), ver: 0, covered: Vec::new(), covered_at: Instant::now() - Duration::from_secs(5), builtin_playing: false }));
     SetTimer(hwnd, T_SLOW, 1000, None);
+    SetTimer(hwnd, T_Z, 250, None); // keep the widgets above the desktop (Explorer re-raises it when apps open or close)
     with_host(|h| reconcile(h));
     let mut msg = MSG::default();
     while GetMessageW(&mut msg, None, 0, 0).as_bool() {
@@ -134,6 +135,7 @@ unsafe fn reconcile_inner(h: &mut Host) {
 
         if !h.wins.iter().any(|w| w.id == inst.id) {
             let hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, w!("VireDeskWidget"), PCWSTR::null(), WS_POPUP, pos.0, pos.1, size.0, size.1, None, None, hinst, None).unwrap_or_default();
+            crate::vdock::dbg(&format!("widgets: create window id={} kind={} at {:?} size {:?} monitor={:?} (mon rect {},{},{},{})", inst.id, inst.kind, pos, size, inst.monitor, mr.left, mr.top, mr.right, mr.bottom));
             if hwnd.is_invalid() { continue; }
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, inst.id as isize);
             h.wins.push(Win {
@@ -222,6 +224,7 @@ unsafe fn on_timer_inner(h: &mut Host, show_new: bool) {
                 w.surf.present(w.hwnd, &w.canvas, w.pos.0, w.pos.1);
             }
             if !IsWindowVisible(w.hwnd).as_bool() {
+                crate::vdock::dbg(&format!("widgets: show window id={} drew={} pos={:?}", w.id, drew, w.pos));
                 if !w.body.is_invalid() { let _ = ShowWindow(w.body, SW_SHOWNOACTIVATE); }
                 let _ = ShowWindow(w.hwnd, SW_SHOWNOACTIVATE);
                 z_place(w);
@@ -254,7 +257,28 @@ unsafe extern "system" fn host_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM
                 T_SLOW => with_host(|h| {
                     h.hub.flush(false);
                     if h.hub.version() != h.ver { reconcile(h); }
-                    if h.z_at.elapsed() > Duration::from_secs(3) { h.z_at = Instant::now(); for w in &h.wins { z_place(w); } }
+                }).unwrap_or(()),
+                // Cheap (returns at once while a widget is already in place), so it can run often:
+                // when an app opens or closes Explorer re-raises the desktop and a widget would
+                // otherwise stay hidden behind it until the next pass.
+                T_Z => with_host(|h| {
+                    // Self-healing: the windows must always match the widgets that are switched on
+                    // (a switch-on that was missed — a swallowed wake-up, a busy moment — used to
+                    // need a restart of Vire), and a window that is not on screen gets shown again.
+                    let mut want: Vec<u32> = { let st = h.hub.lock(); st.profile().instances.iter().filter(|i| i.visible && kind(&i.kind).is_some()).map(|i| i.id).collect() };
+                    h.wins.retain(|w| IsWindow(w.hwnd).as_bool()); // a window that is gone is no window
+                    let mut have: Vec<u32> = h.wins.iter().map(|w| w.id).collect();
+                    want.sort(); have.sort();
+                    if want != have || h.hub.version() != h.ver {
+                        crate::vdock::dbg(&format!("widgets: out of step (want {want:?}, have {have:?}) -> reconcile"));
+                        reconcile(h);
+                    }
+                    let mut redraw = false;
+                    for w in h.wins.iter_mut() {
+                        if !IsWindowVisible(w.hwnd).as_bool() { w.force = true; w.next = Instant::now(); redraw = true; }
+                    }
+                    if redraw { on_timer(h, false); }
+                    for w in &h.wins { z_place(w); }
                 }).unwrap_or(()),
                 _ => {}
             }
