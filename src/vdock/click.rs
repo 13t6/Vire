@@ -15,7 +15,10 @@ impl Dock {
             Kind::App => {
                 dbg(&format!("click app '{}' wins={:?} middle={}", it.name, it.wins, middle));
                 if middle || it.wins.is_empty() {
-                    if let Some(l) = &it.launch { launch(l, None); }
+                    if let Some(l) = &it.launch {
+                        launch(l, None);
+                        if it.wins.is_empty() { self.bounce.retain(|(k, _)| *k != it.key); self.bounce.push((it.key.clone(), Instant::now())); self.start_anim(); }
+                    }
                     return;
                 }
                 let fg = GetForegroundWindow().0 as isize;

@@ -21,14 +21,8 @@ impl Canvas {
         if x < 0 || y < 0 || x >= self.w || y >= self.h { return; }
         let a = (a * c.a).clamp(0.0, 1.0);
         if a <= 0.002 { return; }
-        let p = &mut self.px[(y * self.w + x) as usize];
-        let (oa, or, og, ob) = (((*p >> 24) & 255) as f32 / 255.0, ((*p >> 16) & 255) as f32 / 255.0, ((*p >> 8) & 255) as f32 / 255.0, (*p & 255) as f32 / 255.0);
-        let k = 1.0 - a;
-        let na = a + oa * k;
-        let nr = c.r * a + or * k;
-        let ng = c.g * a + og * k;
-        let nb = c.b * a + ob * k;
-        *p = ((na * 255.0).round() as u32) << 24 | ((nr * 255.0).round() as u32) << 16 | ((ng * 255.0).round() as u32) << 8 | (nb * 255.0).round() as u32;
+        let i = (y * self.w + x) as usize;
+        self.px[i] = over(self.px[i], pack_pm(c, a));
     }
 
     /// Mirror image of the strip of icons, like a glossy floor: the `len` pixels on the icon side of
@@ -36,34 +30,78 @@ impl Canvas {
     /// (icons above the line), 1 = left (icons right of it), 2 = right (icons left of it).
     pub fn reflect(&mut self, edge: u8, base: i32, gap: i32, len: i32, alpha0: f32) {
         let fade = |d: i32| alpha0 * (1.0 - d as f32 / len.max(1) as f32).max(0.0).powf(1.7);
-        let scale = |p: u32, k: f32| -> [f32; 4] {
-            [((p >> 16) & 255) as f32 / 255.0 * k, ((p >> 8) & 255) as f32 / 255.0 * k, (p & 255) as f32 / 255.0 * k, ((p >> 24) & 255) as f32 / 255.0 * k]
-        };
+        let (w, h) = (self.w, self.h);
         for d in 0..len {
             let k = fade(d);
             if k <= 0.003 { continue; }
+            let km = ((k * 256.0) as u32).min(256);
             if edge == 0 {
                 let (sy, dy) = (base - 1 - d, base + gap + d);
-                if sy < 0 || sy >= self.h || dy < 0 || dy >= self.h { continue; }
-                for x in 0..self.w { let p = self.px[(sy * self.w + x) as usize]; if p >> 24 != 0 { self.over_pm(x, dy, scale(p, k)); } }
+                if sy < 0 || sy >= h || dy < 0 || dy >= h { continue; }
+                let (so, dof) = ((sy * w) as usize, (dy * w) as usize);
+                for x in 0..w as usize {
+                    let p = self.px[so + x];
+                    if p >> 24 == 0 { continue; }
+                    let s = mul256(p, km);
+                    if s >> 24 != 0 { self.px[dof + x] = over(self.px[dof + x], s); }
+                }
             } else {
                 let (sx, dx) = if edge == 1 { (base + d, base - gap - 1 - d) } else { (base - 1 - d, base + gap + d) };
-                if sx < 0 || sx >= self.w || dx < 0 || dx >= self.w { continue; }
-                for y in 0..self.h { let p = self.px[(y * self.w + sx) as usize]; if p >> 24 != 0 { self.over_pm(dx, y, scale(p, k)); } }
+                if sx < 0 || sx >= w || dx < 0 || dx >= w { continue; }
+                for y in 0..h {
+                    let p = self.px[(y * w + sx) as usize];
+                    if p >> 24 == 0 { continue; }
+                    let s = mul256(p, km);
+                    if s >> 24 != 0 { let i = (y * w + dx) as usize; self.px[i] = over(self.px[i], s); }
+                }
             }
         }
     }
 
-    /// Adds a premultiplied pixel (source-over).
+    /// Source-over of a straight-alpha colour over a horizontal run of pixels, all at full coverage.
+    fn fill_span(&mut self, y: i32, x0: i32, x1: i32, c: Rgba) {
+        let (x0, x1) = (x0.max(0), x1.min(self.w));
+        if y < 0 || y >= self.h || x0 >= x1 || c.a <= 0.002 { return; }
+        let s = pack_pm(c, c.a.clamp(0.0, 1.0));
+        let row = (y * self.w) as usize;
+        for p in &mut self.px[row + x0 as usize..row + x1 as usize] { *p = over(*p, s); }
+    }
+
+    /// Adds a premultiplied pixel (source-over); `s` is premultiplied r, g, b, a in 0..1.
     #[inline]
     fn over_pm(&mut self, x: i32, y: i32, s: [f32; 4]) {
         if x < 0 || y < 0 || x >= self.w || y >= self.h || s[3] <= 0.002 { return; }
-        let p = &mut self.px[(y * self.w + x) as usize];
-        let k = 1.0 - s[3];
-        let ch = |shift: u32, v: f32| ((((*p >> shift) & 255) as f32 / 255.0) * k + v).clamp(0.0, 1.0);
-        let (na, nr, ng, nb) = (ch(24, s[3]), ch(16, s[0]), ch(8, s[1]), ch(0, s[2]));
-        *p = ((na * 255.0).round() as u32) << 24 | ((nr * 255.0).round() as u32) << 16 | ((ng * 255.0).round() as u32) << 8 | (nb * 255.0).round() as u32;
+        let q = |v: f32| (v * 255.0 + 0.5).clamp(0.0, 255.0) as u32;
+        let i = (y * self.w + x) as usize;
+        self.px[i] = over(self.px[i], q(s[3]) << 24 | q(s[0]) << 16 | q(s[1]) << 8 | q(s[2]));
     }
+}
+
+const M: u32 = 0x00FF_00FF;
+
+/// Premultiplied packed 0xAARRGGBB of straight colour `c` at coverage `a` (already includes c.a).
+#[inline]
+fn pack_pm(c: Rgba, a: f32) -> u32 {
+    let q = |v: f32| (v * 255.0 + 0.5) as u32;
+    q(a) << 24 | q(c.r * a) << 16 | q(c.g * a) << 8 | q(c.b * a)
+}
+
+/// Source-over of a premultiplied packed pixel on a premultiplied packed pixel (integer maths, two channels per op).
+#[inline]
+fn over(d: u32, s: u32) -> u32 {
+    let inv = 255 - (s >> 24);
+    let rb = (d & M) * inv + 0x0080_0080;
+    let rb = ((rb + ((rb >> 8) & M)) >> 8) & M;
+    let ag = ((d >> 8) & M) * inv + 0x0080_0080;
+    let ag = ((ag + ((ag >> 8) & M)) >> 8) & M;
+    let sat = |x: u32| { let t = x & 0x0100_0100; (x | (t - (t >> 8))) & M };
+    sat(rb + (s & M)) | (sat(ag + ((s >> 8) & M)) << 8)
+}
+
+/// Every channel × `m`/256 (`m` in 0..=256).
+#[inline]
+fn mul256(p: u32, m: u32) -> u32 {
+    (((p & M) * m >> 8) & M) | ((((p >> 8) & M) * m >> 8) & M) << 8
 }
 
 #[inline]
@@ -85,13 +123,23 @@ impl R {
 pub fn fill_rrect(c: &mut Canvas, r: R, rad: f32, col: impl Fn(f32) -> Rgba) {
     let rad = rad.min(r.w / 2.0).min(r.h / 2.0).max(0.0);
     let (x0, y0, x1, y1) = (r.x.floor() as i32 - 1, r.y.floor() as i32 - 1, (r.x + r.w).ceil() as i32 + 1, (r.y + r.h).ceil() as i32 + 1);
+    let (cx, cy, hw, hh) = (r.cx(), r.cy(), r.w / 2.0, r.h / 2.0);
     for y in y0.max(0)..y1.min(c.h) {
         let fy = ((y as f32 + 0.5 - r.y) / r.h).clamp(0.0, 1.0);
         let k = col(fy);
-        for x in x0.max(0)..x1.min(c.w) {
-            let d = sd_rrect(x as f32 + 0.5, y as f32 + 0.5, r.cx(), r.cy(), r.w / 2.0, r.h / 2.0, rad);
-            if d < 0.5 { c.blend(x, y, k, (0.5 - d).min(1.0)); }
-        }
+        let dy = (y as f32 + 0.5 - cy).abs();
+        // Pixels whose centre is surely ≥ 0.5 px inside the edge get full coverage: no distance maths.
+        let lim = if rad < 1.0 || dy > hh - 0.5 { -1.0 } else if dy <= hh - rad { hw - 0.5 } else { hw - rad };
+        let (mut f0, mut f1) = (x1, x1);
+        if lim > 0.0 { f0 = ((cx - lim - 0.5).ceil() as i32).max(x0); f1 = (((cx + lim - 0.5).floor() as i32) + 1).min(x1); if f1 <= f0 { f0 = x1; f1 = x1; } }
+        let edge = |c: &mut Canvas, a: i32, b: i32| {
+            for x in a.max(0)..b.min(c.w) {
+                let d = sd_rrect(x as f32 + 0.5, y as f32 + 0.5, cx, cy, hw, hh, rad);
+                if d < 0.5 { c.blend(x, y, k, (0.5 - d).min(1.0)); }
+            }
+        };
+        edge(c, x0, f0);
+        if f1 > f0 { c.fill_span(y, f0, f1, k); edge(c, f1, x1); }
     }
 }
 
@@ -99,13 +147,26 @@ pub fn fill_rrect(c: &mut Canvas, r: R, rad: f32, col: impl Fn(f32) -> Rgba) {
 pub fn stroke_rrect(c: &mut Canvas, r: R, rad: f32, width: f32, col: impl Fn(f32) -> Rgba) {
     let rad = rad.min(r.w / 2.0).min(r.h / 2.0).max(0.0);
     let (x0, y0, x1, y1) = (r.x.floor() as i32 - 1, r.y.floor() as i32 - 1, (r.x + r.w).ceil() as i32 + 1, (r.y + r.h).ceil() as i32 + 1);
+    let (cx, cy, hw, hh) = (r.cx(), r.cy(), r.w / 2.0, r.h / 2.0);
+    let inset = rad.max(width + 1.5);
     for y in y0.max(0)..y1.min(c.h) {
         let fy = ((y as f32 + 0.5 - r.y) / r.h).clamp(0.0, 1.0);
         let k = col(fy);
-        for x in x0.max(0)..x1.min(c.w) {
-            let d = sd_rrect(x as f32 + 0.5, y as f32 + 0.5, r.cx(), r.cy(), r.w / 2.0, r.h / 2.0, rad);
+        // Deep inside (more than the stroke width from every edge) nothing is drawn: jump over it.
+        let (mut s0, mut s1) = (x1, x1);
+        if (y as f32 + 0.5 - cy).abs() <= hh - inset && hw > inset {
+            s0 = ((cx - (hw - inset) - 0.5).ceil() as i32).max(x0);
+            s1 = (((cx + (hw - inset) - 0.5).floor() as i32) + 1).min(x1);
+            if s1 <= s0 { s0 = x1; s1 = x1; }
+        }
+        let mut x = x0.max(0);
+        let xe = x1.min(c.w);
+        while x < xe {
+            if x == s0 && s1 > s0 { x = s1; continue; }
+            let d = sd_rrect(x as f32 + 0.5, y as f32 + 0.5, cx, cy, hw, hh, rad);
             let band = (width / 2.0 + 0.5 - (d + width / 2.0).abs()).clamp(0.0, 1.0);
             if band > 0.0 { c.blend(x, y, k, band); }
+            x += 1;
         }
     }
 }
@@ -113,33 +174,42 @@ pub fn stroke_rrect(c: &mut Canvas, r: R, rad: f32, width: f32, col: impl Fn(f32
 /// Premultiplied BGRA image (e.g. an app icon).
 pub struct Img { pub w: i32, pub h: i32, pub px: Vec<u32> }
 
-/// Bilinear-scaled draw of `img` into `dst` with extra `opacity`.
+/// Bilinear-scaled draw of `img` into `dst` with extra `opacity` (fixed-point, two channels per op).
 pub fn draw_img(c: &mut Canvas, img: &Img, dst: R, opacity: f32) {
-    if dst.w < 1.0 || dst.h < 1.0 { return; }
+    if dst.w < 1.0 || dst.h < 1.0 || img.w < 1 || img.h < 1 { return; }
     let (x0, y0) = (dst.x.floor() as i32, dst.y.floor() as i32);
     let (x1, y1) = ((dst.x + dst.w).ceil() as i32, (dst.y + dst.h).ceil() as i32);
-    let sx = img.w as f32 / dst.w;
-    let sy = img.h as f32 / dst.h;
-    let get = |x: i32, y: i32| -> [f32; 4] {
-        let p = img.px[(y.clamp(0, img.h - 1) * img.w + x.clamp(0, img.w - 1)) as usize];
-        [((p >> 16) & 255) as f32 / 255.0, ((p >> 8) & 255) as f32 / 255.0, (p & 255) as f32 / 255.0, ((p >> 24) & 255) as f32 / 255.0]
-    };
+    let (sx, sy) = (img.w as f32 / dst.w, img.h as f32 / dst.h);
+    let (xa, xb) = (x0.max(0), x1.min(c.w));
+    if xa >= xb { return; }
+    // Per destination column: source column pair, blend weight (0..256), edge coverage (0..256).
+    let cols: Vec<(usize, usize, u32, u32)> = (xa..xb).map(|x| {
+        let u = ((x as f32 + 0.5 - dst.x) * sx - 0.5).max(0.0);
+        let ux = u.floor() as i32;
+        let cov = ((x as f32 + 1.0).min(dst.x + dst.w) - (x as f32).max(dst.x)).clamp(0.0, 1.0);
+        (ux.clamp(0, img.w - 1) as usize, (ux + 1).clamp(0, img.w - 1) as usize, (u.fract() * 256.0) as u32, (cov * 256.0) as u32)
+    }).collect();
+    let op = ((opacity.clamp(0.0, 1.0) * 256.0) as u32).min(256);
+    let iw = img.w as usize;
+    let lerp = |a: u32, b: u32, f: u32| mul256(a, 256 - f).wrapping_add(mul256(b, f));
     for y in y0.max(0)..y1.min(c.h) {
         let v = ((y as f32 + 0.5 - dst.y) * sy - 0.5).max(0.0);
-        let (vy, fy) = (v.floor() as i32, v.fract());
-        for x in x0.max(0)..x1.min(c.w) {
-            // Edge coverage so fractional positions stay smooth.
-            let cov = ((x as f32 + 1.0).min(dst.x + dst.w) - (x as f32).max(dst.x)).clamp(0.0, 1.0)
-                * ((y as f32 + 1.0).min(dst.y + dst.h) - (y as f32).max(dst.y)).clamp(0.0, 1.0);
-            if cov <= 0.0 { continue; }
-            let u = ((x as f32 + 0.5 - dst.x) * sx - 0.5).max(0.0);
-            let (ux, fx) = (u.floor() as i32, u.fract());
-            let (a, b, cc, d) = (get(ux, vy), get(ux + 1, vy), get(ux, vy + 1), get(ux + 1, vy + 1));
-            let mut s = [0.0f32; 4];
-            for i in 0..4 {
-                s[i] = ((a[i] * (1.0 - fx) + b[i] * fx) * (1.0 - fy) + (cc[i] * (1.0 - fx) + d[i] * fx) * fy) * opacity * cov;
-            }
-            c.over_pm(x, y, s);
+        let vy = v.floor() as i32;
+        let fy = (v.fract() * 256.0) as u32;
+        let covy = (((y as f32 + 1.0).min(dst.y + dst.h) - (y as f32).max(dst.y)).clamp(0.0, 1.0) * 256.0) as u32;
+        if covy == 0 { continue; }
+        let r0 = vy.clamp(0, img.h - 1) as usize * iw;
+        let r1 = (vy + 1).clamp(0, img.h - 1) as usize * iw;
+        let row = (y * c.w) as usize;
+        for (i, &(ua, ub, fx, covx)) in cols.iter().enumerate() {
+            let top = lerp(img.px[r0 + ua], img.px[r0 + ub], fx);
+            let bot = lerp(img.px[r1 + ua], img.px[r1 + ub], fx);
+            let mut s = lerp(top, bot, fy);
+            let m = (op * covx >> 8) * covy >> 8;
+            if m < 256 { s = mul256(s, m); }
+            if s >> 24 == 0 { continue; }
+            let di = row + xa as usize + i;
+            c.px[di] = over(c.px[di], s);
         }
     }
 }
@@ -151,6 +221,17 @@ pub fn text_mask(text: &str, px_size: i32, weight: i32) -> Mask { text_mask_ex(t
 
 /// Same with any installed font face and extra letter spacing (pixels).
 pub fn text_mask_ex(text: &str, px_size: i32, weight: i32, face: &str, spacing: i32) -> Mask {
+    // The dock repaints every frame while animating but its labels rarely change: remember the
+    // last few masks instead of asking GDI (font + DIB + DrawText) 60 times a second.
+    thread_local! { static CACHE: std::cell::RefCell<std::collections::HashMap<(String, i32, i32, String, i32), (i32, i32, std::rc::Rc<Vec<u8>>)>> = Default::default(); }
+    let key = (text.to_owned(), px_size, weight, face.to_owned(), spacing);
+    if let Some(m) = CACHE.with(|c| c.borrow().get(&key).map(|(w, h, a)| Mask { w: *w, h: *h, a: (**a).clone() })) { return m; }
+    let m = text_mask_raw(text, px_size, weight, face, spacing);
+    CACHE.with(|c| { let mut c = c.borrow_mut(); if c.len() > 96 { c.clear(); } c.insert(key, (m.w, m.h, std::rc::Rc::new(m.a.clone()))); });
+    m
+}
+
+fn text_mask_raw(text: &str, px_size: i32, weight: i32, face: &str, spacing: i32) -> Mask {
     // DrawTextW with an empty buffer can fault inside USER32: nothing to draw, so don't call it.
     if text.is_empty() { let h = px_size.max(1); return Mask { w: 1, h, a: vec![0; h as usize] }; }
     unsafe {

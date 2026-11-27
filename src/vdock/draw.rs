@@ -92,6 +92,11 @@ impl Dock {
             let size = self.geo.icon * sc;
             let pad = (self.geo.thick - self.geo.icon) / 2.0;
             // Icon rect anchored at the screen edge, growing toward the centre.
+            // Launch bounce: hops away from the screen edge, each hop lower than the last.
+            let hop = self.bounce.iter().find(|(k, _)| *k == it.key).map_or(0.0, |(_, t)| {
+                let e = t.elapsed().as_secs_f32();
+                if e > 3.0 { 0.0 } else { (e * std::f32::consts::PI * 1.9).sin().abs() * (-e * 0.9).exp() * self.geo.icon * 0.55 }
+            });
             let ir = if reflect { match self.cfg.edge {
                 Edge::Bottom => R { x: along - size / 2.0, y: base - size, w: size, h: size },
                 Edge::Left => R { x: base, y: along - size / 2.0, w: size, h: size },
@@ -101,6 +106,7 @@ impl Dock {
                 Edge::Left => R { x: b.x + pad, y: along - size / 2.0, w: size, h: size },
                 Edge::Right => R { x: b.x + b.w - pad - size, y: along - size / 2.0, w: size, h: size },
             } };
+            let ir = match self.cfg.edge { Edge::Bottom => R { y: ir.y - hop, ..ir }, Edge::Left => R { x: ir.x + hop, ..ir }, Edge::Right => R { x: ir.x - hop, ..ir } };
             match it.kind {
                 Kind::App => {
                     if let Some(img) = self.icon_for(it) {
@@ -285,6 +291,10 @@ impl Dock {
             let next = cur + (target - cur) * 0.32;
             if (next - target).abs() > 0.003 { moving = true; self.scales[i] = next; } else { self.scales[i] = target; }
         }
+        // Launch bounce ends when the app has a window or after ~3 s; it keeps the animation running.
+        let items = &self.items;
+        self.bounce.retain(|(k, t)| t.elapsed().as_secs_f32() < 3.0 && items.iter().any(|it| it.key == *k && it.wins.is_empty()));
+        if !self.bounce.is_empty() { moving = true; }
         let r = self.reveal + (self.reveal_target - self.reveal) * 0.3;
         if (r - self.reveal_target).abs() > 0.004 { moving = true; self.reveal = r; } else { self.reveal = self.reveal_target; }
         moving

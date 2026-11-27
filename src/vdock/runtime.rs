@@ -365,7 +365,7 @@ pub(super) unsafe fn new_dock(app: Arc<Mutex<AppState>>, shared: Option<Arc<Shar
         cfg, app, body, content, content_surf: Surface::new(), shared, active: false, items: vec![], icons: HashMap::new(), icon_tx, icon_rx, icon_wait: std::collections::HashSet::new(), icon_tries: HashMap::new(), win_keys: HashMap::new(), pin_exe: HashMap::new(), order: Vec::new(),
         hover: None, scales: vec![], reveal: 1.0, reveal_target: 1.0, leave_at: None, appbar: false, tick: 0, clock: (String::new(), String::new()),
         fullscreen: false, shown: false, geo: Geo { s: 1.0, slot: 56.0, icon: 44.0, max_icon: 68.0, thick: 62.0, refl_gap: 0.0, refl_len: 0.0, over: 64.0, pad: 0.0, margin: 8.0, len: 100.0, lens: vec![], mon: RECT::default() },
-        anim: false, menu_open: false, body_drawn: None, mon_rect: None, light: false, luma: 0.0, luma_set: false,
+        anim: false, menu_open: false, body_drawn: None, mon_rect: None, light: false, luma: 0.0, luma_set: false, bounce: Vec::new(),
     }
 }
 

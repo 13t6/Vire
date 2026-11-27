@@ -195,7 +195,18 @@ impl Dock {
                 at += 1;
             }
         } else {
-            for p in &self.cfg.pins {
+            // No live read of the taskbar (Windows exposes none while it is auto-hidden): follow the
+            // shortcuts of its pinned folder instead — apps pinned / unpinned there show up here too.
+            let lnks = tbmirror::windows_pins();
+            let mut pins: Vec<Pin> = self.cfg.pins.iter()
+                .filter(|p| !(p.launch.contains("User Pinned\\TaskBar") && !std::path::Path::new(&p.launch).exists()))
+                .cloned().collect();
+            for l in lnks {
+                if self.cfg.unpinned.iter().any(|k| k.eq_ignore_ascii_case(&l.key)) { continue; }
+                if pins.iter().any(|p| p.key.eq_ignore_ascii_case(&l.key)) { continue; }
+                pins.push(l);
+            }
+            for p in &pins {
                 // Pins saved by older builds have no exe yet: resolve the shortcut once and cache it.
                 let exe = match &p.exe {
                     Some(e) => e.clone(),

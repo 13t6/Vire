@@ -210,6 +210,8 @@ struct Dock {
     light: bool,
     luma: f32,
     luma_set: bool,
+    /// Apps just launched from the dock: their icon bounces until a window shows up (or ~3 s).
+    bounce: Vec<(String, Instant)>,
 }
 
 // docks[0] is the leader (main monitor); the rest follow it, one per extra monitor.

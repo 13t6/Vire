@@ -158,7 +158,8 @@ fn main() {
     unsafe { let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED); }
     let start_in_tray = std::env::args().any(|a| a == "--tray");
     let state = Arc::new(Mutex::new(model::AppState::load()));
-    autostart::set_start_shortcut(state.lock().unwrap().settings.start_menu);
+    // Always listed in the Windows search box / Start menu (a shortcut that follows the exe).
+    autostart::set_start_shortcut(true);
     let engine = engine::Engine::start();
     if std::env::args().any(|a| a == "--dev-ignore-fullscreen") { vdock::IGNORE_FULLSCREEN.store(true, std::sync::atomic::Ordering::Relaxed); }
     let vdock = vdock::VDock::start(state.clone());

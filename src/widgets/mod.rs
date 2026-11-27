@@ -13,8 +13,10 @@
 //! draws when its content really changes (the clock once a second / minute, the visualizer only
 //! while sound is playing).
 
+pub mod calendar;
 pub mod clock;
 mod host;
+pub mod system;
 pub mod viz;
 
 pub use host::start;
@@ -90,7 +92,7 @@ pub struct KindInfo {
 
 /// Every widget Vire knows. **Register new widgets here.**
 pub fn kinds() -> &'static [KindInfo] {
-    static KINDS: [KindInfo; 2] = [clock::INFO, viz::INFO];
+    static KINDS: [KindInfo; 4] = [clock::INFO, viz::INFO, calendar::INFO, system::INFO];
     &KINDS
 }
 
